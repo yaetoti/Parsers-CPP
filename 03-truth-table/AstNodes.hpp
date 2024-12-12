@@ -12,7 +12,8 @@ enum struct AstNodeType {
 enum struct BinaryOperatorType {
   AND,
   XOR,
-  OR
+  OR,
+  COUNT
 };
 
 struct AstNode {
@@ -20,6 +21,11 @@ struct AstNode {
 
   [[nodiscard]] AstNodeType GetType() const {
     return m_type;
+  }
+
+  template <typename T>
+  [[nodiscard]] const T* As() const {
+    return dynamic_cast<const T*>(this);
   }
 
 protected:
