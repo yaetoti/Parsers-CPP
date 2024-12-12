@@ -2,6 +2,7 @@
 #include <string>
 #include <sstream>
 
+#include "Parser.hpp"
 #include "Tokenizer.hpp"
 
 std::string GetInput() {
@@ -19,7 +20,7 @@ int main() {
   Tokenizer tokenizer(input);
   try {
     if (!tokenizer.Resolve()) {
-      std::cout << "Fail\n";
+      std::cout << "Unknown tokenization error\n";
       return 0;
     }
   } catch (const TokenizationError& e) {
@@ -32,10 +33,18 @@ int main() {
     ss << e.column;
     ss << ".\n";
     std::cout << ss.str();
+    return 0;
   }
 
-  auto& tokens = tokenizer.GetTokens();
-  // (x1_1 &&& x2) || (!x3 & x4)
+  const auto& tokens = tokenizer.GetTokens();
+  Parser parser(tokens);
+  auto root = parser.Parse();
+  if (!root) {
+    std::cout << "Unknown semantic analysis error\n";
+    return 0;
+  }
+
+  // (x1_1 && x2) || (!x3 & x4)
   // TODO: if not does not match FOLLOW() - throw TokenizationError
   // Unexpected token "X" at line: 24, column: 8.
   return 0;

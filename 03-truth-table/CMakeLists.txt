@@ -14,4 +14,7 @@ add_executable(Parsing
   StringUtils.hpp
   Tokens.hpp
   TokenRecorder.hpp
+  AstNodes.hpp
+  ParserView.hpp
+  Parser.hpp
 )
