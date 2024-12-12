@@ -17,9 +17,21 @@ std::string GetInput() {
 int main() {
   std::string input = GetInput();
   Tokenizer tokenizer(input);
-  if (!tokenizer.Resolve()) {
-    std::cout << "Fail\n";
-    return 0;
+  try {
+    if (!tokenizer.Resolve()) {
+      std::cout << "Fail\n";
+      return 0;
+    }
+  } catch (const TokenizationError& e) {
+    std::stringstream ss;
+    ss << "[TE001] Unexpected symbol: \"";
+    ss << e.token;
+    ss << "\" at line ";
+    ss << e.line;
+    ss << ", column ";
+    ss << e.column;
+    ss << ".\n";
+    std::cout << ss.str();
   }
 
   auto& tokens = tokenizer.GetTokens();

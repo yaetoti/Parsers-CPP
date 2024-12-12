@@ -37,12 +37,17 @@ struct TokenizerView final {
   }
 
   [[nodiscard]] std::string ExtractNextToken() const {
-    int offset = 0;
-    while (HasTokens(offset) && !isspace(Next(offset))) {
+    size_t offset = 0;
+    while (HasTokens(offset + 1) && isspace(Next(offset))) {
       ++offset;
     }
 
-    return m_input.substr(m_position, m_position + offset);
+    size_t length = 0;
+    while (HasTokens(offset + length + 1) && !isspace(Next(offset + length))) {
+      ++length;
+    }
+
+    return m_input.substr(m_position + offset, length);
   }
 
   [[nodiscard]] TokenizerView AtOffset(size_t offset) const {
@@ -115,6 +120,7 @@ struct TokenizerView final {
 
   char Advance() {
     assert(HasTokens());
+    ++m_column;
     if (Next() == '\n') {
       ++m_line;
       m_column = 1;

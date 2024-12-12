@@ -15,11 +15,11 @@ struct TokenRecorder final {
   }
 
   [[nodiscard]] size_t GetLine() const {
-    return m_position;
+    return m_line;
   }
 
   [[nodiscard]] size_t GetColumn() const {
-    return m_position;
+    return m_column;
   }
 
   [[nodiscard]] std::string GetToken() const {

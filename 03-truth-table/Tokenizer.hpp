@@ -8,8 +8,15 @@
 #include <vector>
 #include <memory>
 #include <sstream>
+#include <unordered_set>
 
-struct TokenizationError final {
+struct TokenizationError final : std::exception {
+  explicit TokenizationError(size_t line, size_t column, std::string token)
+  : line(line)
+  , column(column)
+  , token(std::move(token)) {
+  }
+
   size_t line;
   size_t column;
   std::string token;
@@ -114,19 +121,19 @@ private:
   // Word operators
 
   static bool MatchWordOperatorNot(const TokenizerView& view) {
-    return view.MatchAnyCase("not") && FollowWordOperator(view.AtOffset(3));
+    return view.MatchAnyCase("not") && FollowWordOperatorNot(view.AtOffset(3));
   }
 
   static bool MatchWordOperatorOr(const TokenizerView& view) {
-    return view.MatchAnyCase("or") && FollowWordOperator(view.AtOffset(2));
+    return view.MatchAnyCase("or") && FollowBinaryWordOperator(view.AtOffset(2));
   }
 
   static bool MatchWordOperatorXor(const TokenizerView& view) {
-    return view.MatchAnyCase("xor") && FollowWordOperator(view.AtOffset(3));
+    return view.MatchAnyCase("xor") && FollowBinaryWordOperator(view.AtOffset(3));
   }
 
   static bool MatchWordOperatorAnd(const TokenizerView& view) {
-    return view.MatchAnyCase("and") && FollowWordOperator(view.AtOffset(3));
+    return view.MatchAnyCase("and") && FollowBinaryWordOperator(view.AtOffset(3));
   }
 
   static bool MatchWordOperator(const TokenizerView& view) {
@@ -144,11 +151,11 @@ private:
   }
 
   static bool MatchOperatorXor(const TokenizerView& view) {
-    return MatchSymbolOperatorOr(view) || MatchWordOperatorOr(view);
+    return MatchSymbolOperatorXor(view) || MatchWordOperatorXor(view);
   }
 
   static bool MatchOperatorAnd(const TokenizerView& view) {
-    return MatchSymbolOperatorOr(view) || MatchWordOperatorOr(view);
+    return MatchSymbolOperatorAnd(view) || MatchWordOperatorAnd(view);
   }
 
   static bool MatchOperator(const TokenizerView& view) {
@@ -167,13 +174,20 @@ private:
     return !view.HasTokens() || MatchBraceClose(view) || MatchOperator(view) || MatchWhitespace(view);
   }
 
-  // Follow for word version of operators 'not' 'and' 'or' 'xor'
-  static bool FollowWordOperator(const TokenizerView& view) {
-    return MatchWhitespace(view) || MatchSymbolOperator(view) || MatchBraceOpen(view);
+  static bool FollowBinaryWordOperator(const TokenizerView& view) {
+    return  MatchSymbolOperatorNot(view) || MatchIdentifier(view) || MatchBool(view) || MatchBraceOpen(view) || MatchWhitespace(view);
   }
 
-  static bool FollowSymbolOperator(const TokenizerView& view) {
-    return MatchSymbolOperator(view) || MatchBraceOpen(view) || MatchWordOperator(view) || MatchWhitespace(view);
+  static bool FollowWordOperatorNot(const TokenizerView& view) {
+    return MatchIdentifier(view) || MatchBool(view) || MatchBraceOpen(view) || MatchWhitespace(view);
+  }
+
+  static bool FollowBinarySymbolOperator(const TokenizerView& view) {
+    return MatchOperatorNot(view) || MatchIdentifier(view) || MatchBool(view) || MatchBraceOpen(view) || MatchWhitespace(view);
+  }
+
+  static bool FollowSymbolOperatorNot(const TokenizerView& view) {
+    return MatchIdentifier(view) || MatchBool(view) || MatchBraceOpen(view) || MatchWhitespace(view);
   }
 
   static bool FollowBraceOpen(const TokenizerView& view) {
@@ -181,7 +195,7 @@ private:
   }
 
   static bool FollowBraceClose(const TokenizerView& view) {
-    return MatchWhitespace(view) || MatchOperator(view) || MatchBraceClose(view);
+    return !view.HasTokens() || MatchOperator(view) || MatchBraceClose(view) || MatchWhitespace(view);
   }
 
 
@@ -195,6 +209,12 @@ private:
 
     char c = view.Advance();
     PushToken(std::make_unique<TokenBool>(c == '1'));
+
+    ResolveWhitespace(view);
+    if (!FollowBool(view)) {
+      throw TokenizationError(view.GetLine(), view.GetColumn(), view.ExtractNextToken());
+    }
+
     return true;
   }
 
@@ -203,13 +223,26 @@ private:
       return false;
     }
 
+    TokenRecorder recorder(view);
+
     std::stringstream ss;
     do {
       ss << view.Advance();
     }
     while (MatchIdentifierRepeat(view));
+    std::string result = ss.str();
+
+    if (kReservedKeywords.contains(result)) {
+      throw TokenizationError(recorder.GetLine(), recorder.GetColumn(), recorder.GetToken());
+    }
 
     PushToken(std::make_unique<TokenIdentifier>(ss.str()));
+
+    ResolveWhitespace(view);
+    if (!FollowIdentifyer(view)) {
+      throw TokenizationError(view.GetLine(), view.GetColumn(), view.ExtractNextToken());
+    }
+
     return true;
   }
 
@@ -222,6 +255,12 @@ private:
 
     view.Advance();
     PushToken(std::make_unique<TokenBraceOpen>());
+
+    ResolveWhitespace(view);
+    if (!FollowBraceOpen(view)) {
+      throw TokenizationError(view.GetLine(), view.GetColumn(), view.ExtractNextToken());
+    }
+
     return true;
   }
 
@@ -232,6 +271,12 @@ private:
 
     view.Advance();
     PushToken(std::make_unique<TokenBraceClose>());
+
+    ResolveWhitespace(view);
+    if (!FollowBraceClose(view)) {
+      throw TokenizationError(view.GetLine(), view.GetColumn(), view.ExtractNextToken());
+    }
+
     return true;
   }
 
@@ -241,12 +286,24 @@ private:
     if (MatchSymbolOperatorNot(view)) {
       view.Advance();
       PushToken(std::make_unique<TokenOperatorNot>());
+
+      ResolveWhitespace(view);
+      if (!FollowSymbolOperatorNot(view)) {
+        throw TokenizationError(view.GetLine(), view.GetColumn(), view.ExtractNextToken());
+      }
+
       return true;
     }
 
     if (MatchWordOperatorNot(view)) {
       view.Advance(3);
       PushToken(std::make_unique<TokenOperatorNot>());
+
+      ResolveWhitespace(view);
+      if (!FollowWordOperatorNot(view)) {
+        throw TokenizationError(view.GetLine(), view.GetColumn(), view.ExtractNextToken());
+      }
+
       return true;
     }
 
@@ -261,12 +318,24 @@ private:
       }
 
       PushToken(std::make_unique<TokenOperatorOr>());
+
+      ResolveWhitespace(view);
+      if (!FollowBinarySymbolOperator(view)) {
+        throw TokenizationError(view.GetLine(), view.GetColumn(), view.ExtractNextToken());
+      }
+
       return true;
     }
 
     if (MatchWordOperatorOr(view)) {
       view.Advance(2);
       PushToken(std::make_unique<TokenOperatorOr>());
+
+      ResolveWhitespace(view);
+      if (!FollowBinaryWordOperator(view)) {
+        throw TokenizationError(view.GetLine(), view.GetColumn(), view.ExtractNextToken());
+      }
+
       return true;
     }
 
@@ -277,12 +346,24 @@ private:
     if (MatchSymbolOperatorXor(view)) {
       view.Advance();
       PushToken(std::make_unique<TokenOperatorXor>());
+
+      ResolveWhitespace(view);
+      if (!FollowBinarySymbolOperator(view)) {
+        throw TokenizationError(view.GetLine(), view.GetColumn(), view.ExtractNextToken());
+      }
+
       return true;
     }
 
     if (MatchWordOperatorXor(view)) {
       view.Advance(3);
       PushToken(std::make_unique<TokenOperatorXor>());
+
+      ResolveWhitespace(view);
+      if (!FollowBinaryWordOperator(view)) {
+        throw TokenizationError(view.GetLine(), view.GetColumn(), view.ExtractNextToken());
+      }
+
       return true;
     }
 
@@ -297,12 +378,24 @@ private:
       }
 
       PushToken(std::make_unique<TokenOperatorAnd>());
+
+      ResolveWhitespace(view);
+      if (!FollowBinarySymbolOperator(view)) {
+        throw TokenizationError(view.GetLine(), view.GetColumn(), view.ExtractNextToken());
+      }
+
       return true;
     }
 
     if (MatchWordOperatorAnd(view)) {
       view.Advance(3);
       PushToken(std::make_unique<TokenOperatorAnd>());
+
+      ResolveWhitespace(view);
+      if (!FollowBinaryWordOperator(view)) {
+        throw TokenizationError(view.GetLine(), view.GetColumn(), view.ExtractNextToken());
+      }
+
       return true;
     }
 
@@ -427,4 +520,5 @@ private:
 private:
   TokenizerView m_view;
   std::vector<std::unique_ptr<Token>> m_tokens;
+  inline static std::unordered_set<std::string> kReservedKeywords = { "and", "xor", "or", "not" };
 };
