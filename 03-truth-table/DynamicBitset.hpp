@@ -4,6 +4,22 @@
 #include <cassert>
 #include <vector>
 
+struct VectorBitset final {
+  static bool AllSet(const std::vector<bool>& bitset) {
+    return std::all_of(bitset.begin(), bitset.end(), [](bool value) { return value; });
+  }
+
+  static void Increment(std::vector<bool>& bitset) {
+    for (size_t bitId = 0; bitId < bitset.size(); ++bitId) {
+      bitset.at(bitId) = !bitset.at(bitId);
+      if (bitset.at(bitId) == true) {
+        // No overflow
+        return;
+      }
+    }
+  }
+};
+
 struct DynamicBitset final {
   explicit DynamicBitset()
   : m_bits(0) {

@@ -29,35 +29,37 @@ struct Interpreter final {
     // Create mapping
     m_nameIndexTable.clear();
     for (size_t i = 0; i < m_parameterNames.size(); ++i) {
-      m_nameIndexTable.emplace(m_parameterNames.at(i), m_parameterNames.size() - i - 1);
+      m_nameIndexTable.emplace(m_parameterNames.at(i), i);
     }
-    // Reset bitset
-    m_bitset.Resize(m_parameterNames.size());
   }
 
   TruthTable GenerateTruthTable() {
     assert(m_root);
 
     TruthTable table(m_parameterNames);
-    m_bitset.Reset();
+    std::vector<bool> values(m_parameterNames.size());
 
     while (true) {
-      std::vector<bool> values = m_bitset.AsBoolVector();
-      bool result = EvaluateNode(m_root.get());
+      bool result = EvaluateNode(m_root.get(), values);
       table.EmplaceRecord(std::make_unique<TruthTableRecord>(values, result));
 
-      if (m_bitset.AllSet()) {
+      if (VectorBitset::AllSet(values)) {
         return table;
       }
 
-      ++m_bitset;
+      VectorBitset::Increment(values);
+
+      // if (m_bitset.AllSet()) {
+      //   return table;
+      // }
+      //
+      // ++m_bitset;
     }
   }
 
-  bool Evaluate(std::vector<bool> parameters) {
+  bool Evaluate(const std::vector<bool>& parameters) {
     assert(parameters.size() == m_parameterNames.size());
-    // TODO NAHOOI ebanniy bitset, it is memory effecient but inconvenient because of lots of conversions
-    return EvaluateNode(m_root.get());
+    return EvaluateNode(m_root.get(), parameters);
   }
 
 private:
@@ -80,23 +82,23 @@ private:
     }
   }
 
-  bool EvaluateNode(const AstNode* node) {
+  bool EvaluateNode(const AstNode* node, const std::vector<bool>& parameters) {
     if (node->GetType() == AstNodeType::BOOL) {
       return node->As<AstNodeBool>()->GetValue();
     }
 
     if (node->GetType() == AstNodeType::PARAMETER) {
-      return m_bitset.Get(m_nameIndexTable.at(node->As<AstNodeParameter>()->GetName()));
+      return parameters.at(m_nameIndexTable.at(node->As<AstNodeParameter>()->GetName()));
     }
 
     if (node->GetType() == AstNodeType::UNARY_OPERATOR_NOT) {
-      return !EvaluateNode(node->As<AstNodeUnaryOperatorNot>()->GetChild().get());
+      return !EvaluateNode(node->As<AstNodeUnaryOperatorNot>()->GetChild().get(), parameters);
     }
 
     if (node->GetType() == AstNodeType::BINARY_OPERATOR) {
       auto opNode = node->As<AstNodeBinaryOperator>();
-      bool leftResult = EvaluateNode(opNode->GetLeft().get());
-      bool rightResult = EvaluateNode(opNode->GetRight().get());
+      bool leftResult = EvaluateNode(opNode->GetLeft().get(), parameters);
+      bool rightResult = EvaluateNode(opNode->GetRight().get(), parameters);
 
       switch (opNode->GetOperatorType()) {
         case BinaryOperatorType::AND: {
@@ -123,5 +125,5 @@ private:
   std::shared_ptr<AstNode> m_root;
   std::vector<std::string> m_parameterNames;
   std::unordered_map<std::string, size_t> m_nameIndexTable;
-  DynamicBitset m_bitset;
+  // DynamicBitset m_bitset;
 };
