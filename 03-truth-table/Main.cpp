@@ -81,7 +81,6 @@ int main() {
   Interpreter interpreter;
   interpreter.SetExpression(root);
   bool result = interpreter.Evaluate(std::vector<bool>({true, true, true, false}));
-
   auto table = interpreter.GenerateTruthTable();
 
   TableToCSV("result.csv", table);
