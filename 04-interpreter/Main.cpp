@@ -4,11 +4,8 @@
 #include <string_view>
 #include <sstream>
 
-//#include "Interpreter.hpp"
 #include "Lexer.hpp"
 #include "Matcher.hpp"
-//#include "Parser.hpp"
-//#include "Tokenizer.hpp"
 
 std::string GetInput() {
   std::stringstream ss;
@@ -20,123 +17,104 @@ std::string GetInput() {
   return ss.str();
 }
 
-struct SampleState final {
-  size_t nestingLevel;
-};
-
-struct SampleContext final {
-  [[nodiscard]] SampleState GetState() const {
-    return SampleState(m_nestingLevel);
+void PrintToken(const Token* token) {
+  TokenType type = token->GetType();
+  switch (type) {
+    case TokenType::NUMBER: {
+      const auto* tokenNumber = dynamic_cast<const TokenNumber*>(token);
+      std::cout << "NUMBER(" << tokenNumber->GetValue() << ")\n";
+      break;
+    }
+    case TokenType::IDENTIFIER: {
+      const auto* tokenIdentifier = dynamic_cast<const TokenIdentifier*>(token);
+      std::cout << "IDENTIFIER(" << tokenIdentifier->GetName() << ")\n";
+      break;
+    }
+    case TokenType::OP_DEREFERENCE:
+      std::cout << "OP_DEREFERENCE\n";
+      break;
+    case TokenType::OP_OR:
+      std::cout << "OP_OR\n";
+      break;
+    case TokenType::OP_AND:
+      std::cout << "OP_AND\n";
+      break;
+    case TokenType::OP_EQUAL:
+      std::cout << "OP_EQUAL\n";
+      break;
+    case TokenType::OP_NOT_EQUAL:
+      std::cout << "OP_NOT_EQUAL\n";
+      break;
+    case TokenType::OP_ASSIGN:
+      std::cout << "OP_ASSIGN\n";
+      break;
+    case TokenType::OP_CALL:
+      std::cout << "OP_CALL\n";
+      break;
+    case TokenType::KEYWORD_PRINT:
+      std::cout << "KEYWORD_PRINT\n";
+      break;
+    case TokenType::KEYWORD_ADD:
+      std::cout << "KEYWORD_ADD\n";
+      break;
+    case TokenType::KEYWORD_SUB:
+      std::cout << "KEYWORD_SUB\n";
+      break;
+    case TokenType::KEYWORD_MULT:
+      std::cout << "KEYWORD_MULT\n";
+      break;
+    case TokenType::KEYWORD_DELETE:
+      std::cout << "KEYWORD_DELETE\n";
+      break;
+    case TokenType::KEYWORD_IF:
+      std::cout << "KEYWORD_IF\n";
+      break;
+    case TokenType::KEYWORD_THEN:
+      std::cout << "KEYWORD_THEN\n";
+      break;
+    case TokenType::KEYWORD_FUNCTION:
+      std::cout << "KEYWORD_FUNCTION\n";
+      break;
+    case TokenType::KEYWORD_LOOP:
+      std::cout << "KEYWORD_LOOP\n";
+      break;
+    case TokenType::KEYWORD_DO:
+      std::cout << "KEYWORD_DO\n";
+      break;
+    case TokenType::BLOCK_END:
+      std::cout << "BLOCK_END\n";
+      break;
+    default: break;
   }
+}
 
-  void SetState(const SampleState& state) {
-    m_nestingLevel = state.nestingLevel;
+void PrintTokens(const std::vector<std::unique_ptr<Token>>& tokens) {
+  for (const auto& token : tokens) {
+    PrintToken(token.get());
   }
-
-public:
-  size_t m_nestingLevel = 0;
-};
-
-size_t m_nestingLevel = 0;
-
-static constexpr auto IsWS = [](char c) { return c == ' ' || c == '\t' || c == '\f' || c == '\v' || c == '\r'; };
-static constexpr auto IsNL = [](char c) { return c == '\n'; };
-static constexpr auto IsNotNL = [](char c) { return c != '\n'; };
-static constexpr auto IsSign = [](char c) { return c == '+' || c == '-'; };
-
-bool ResolveComment(LexerView& view) {
-  return Matcher(view).Any("//").ZeroMany(IsNotNL);
-}
-
-bool ResolveSkip(LexerView& view) {
-  return (m_nestingLevel == 0)
-  ? (Matcher(view).Any(IsWS, IsNL) || ResolveComment(view))
-  : (Matcher(view).Any(IsWS) || ResolveComment(view));
-}
-
-bool ResolveIdentifier(LexerView& view) {
-  return Matcher(view)
-  .Many(isalpha)
-  .CollectTokenRecorder([](const auto& recorder) {
-    auto tokenView = recorder.GetTokenView();
-    if (Grammar::IsKeyword(tokenView)) {
-      return false;
-    }
-
-    std::cout << "IDENTIFIER (" << tokenView << ")\n";
-    return true;
-  });
-}
-
-bool ResolveNumber(LexerView& view) {
-  bool isNegative = false;
-  return Matcher(view)
-  .Perform([&isNegative](auto& view) {
-    if (view.Match(IsSign)) {
-      isNegative = view.Next() == '-';
-      view.Advance();
-    }
-  })
-  .AssertZeroMany(ResolveSkip)
-  .Record()
-  .Many(isdigit)
-  .CollectTokenRecorder([isNegative](const auto& recorder) {
-    try {
-      int64_t number = std::stoll(recorder.GetToken());
-      number = isNegative ? -number : number;
-      std::cout << "NUMBER (" << number << ")\n";
-    } catch (std::exception&) {
-      return false;
-    }
-  });
-}
-
-bool ResolveDereference(LexerView& view) {
-  return Matcher(view).Any('$').Perform([](auto& view) {
-    std::cout << "OPERATOR_DEREFERENCE\n";
-  });
-}
-
-bool ResolveValue(LexerView& view) {
-  return ResolveNumber(view)
-  || Matcher(view)
-  .Assert(ResolveDereference)
-  .AssertZeroMany(ResolveSkip)
-  .Assert(ResolveIdentifier);
-}
-
-bool ResolveOperatorAssignment(LexerView& view) {
-  return Matcher(view).Any('=').Perform([](auto& view) {
-    std::cout << "OPERATOR_ASSIGNMENT\n";
-  });
-}
-
-bool ResolveAssignment(LexerView& view) {
-  return Matcher(view)
-  .Assert(ResolveIdentifier)
-  .AssertZeroMany(ResolveSkip)
-  .Assert(ResolveOperatorAssignment)
-  .AssertZeroMany(ResolveSkip)
-  .Assert(ResolveValue);
-}
-
-bool ResolveStatementChain(LexerView& view) {
-  return Matcher(view)
-  .AssertZeroMany(ResolveSkip)
-  .Assert(ResolveAssignment)
-  .AssertZeroMany(ResolveStatementChain);
 }
 
 int main() {
   std::string input = GetInput();
-  LexerView view(input);
-  SampleContext ctx;
-
-  if (ResolveStatementChain(view)) {
-    std::cout << "Success UwU\n";
-    return 0;
+  Lexer lexer(input);
+  if (!lexer.Tokenize()) {
+    std::cout << "Fail! FAIL!!1 YOU ARE A FAILURE !!1!!1!\n";
+    return 1;
   }
 
-  std::cout << "Fail! FAIL!! YOU ARE A FAILURE!!11!\n";
-  return 1;
+  std::cout << "Success UwU\n";
+  const auto& tokens = lexer.GetTokens();
+  PrintTokens(tokens);
+  return 0;
+
+  // LexerView view(input);
+  // SampleContext ctx;
+  //
+  // if (ResolveStatementChain(view)) {
+  //   std::cout << "Success UwU\n";
+  //   return 0;
+  // }
+  //
+  // std::cout << "Fail! FAIL!! YOU ARE A FAILURE!!11!\n";
+  // return 1;
 }

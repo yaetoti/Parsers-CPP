@@ -7,6 +7,11 @@ concept LexerViewPredicate = requires(Func f, LexerView& view) {
   { f(view) } -> std::convertible_to<bool>;
 };
 
+template <typename Func, typename... Args>
+concept LexerViewPredicateV = requires(Func f, Args... args, LexerView& view) {
+  { std::invoke(f, args..., view) } -> std::convertible_to<bool>;
+};
+
 template <typename Func>
 concept LexerViewConsumer = requires(Func f, LexerView& view) {
   f(view);
@@ -105,7 +110,47 @@ struct Matcher final {
   // .Restore()???
 
 
+  // Non-advancing, state-changing
+  // .Match(char...)
+  // .Match(string_view...)
+  // .Match(CharPredicate...)
 
+  template <typename... Chars>
+  Matcher& Match(Chars... chars) requires (... && std::same_as<Chars, char>) {
+    if (!m_isOk) {
+      return *this;
+    }
+
+    m_isOk = m_view.Match(chars...);
+    RestoreIfFailed();
+    return *this;
+}
+
+  template <StringViewIsh... StringViews>
+  Matcher& Match(StringViews... views) {
+    if (!m_isOk) {
+      return *this;
+    }
+
+    m_isOk = m_view.Match(views...);
+    RestoreIfFailed();
+    return *this;
+  }
+
+  template <CharPredicate... Predicate>
+  Matcher& Match(Predicate... predicate) {
+    if (!m_isOk) {
+      return *this;
+    }
+
+    m_isOk = m_view.Match(predicate...);
+    RestoreIfFailed();
+    return *this;
+  }
+
+
+
+  // Advancing, non-state-changing
   // .Optional(char...)
   // .Optional(string_view...)
   // .Optional(CharPredicate...)
@@ -290,6 +335,17 @@ struct Matcher final {
     return *this;
   }
 
+  template <typename Predicate, typename... Args>
+  Matcher& Assert(Predicate predicate, Args... args) requires(LexerViewPredicateV<Predicate, Args...>) {
+    if (!m_isOk) {
+      return *this;
+    }
+
+    m_isOk = std::invoke(predicate, args..., m_view);
+    RestoreIfFailed();
+    return *this;
+  }
+
   template <LexerViewPredicate Predicate>
   Matcher& AssertZeroMany(Predicate predicate) {
     if (!m_isOk) {
@@ -297,6 +353,18 @@ struct Matcher final {
     }
 
     while (predicate(m_view)) {
+    }
+
+    return *this;
+  }
+
+  template <typename Predicate, typename... Args>
+  Matcher& AssertZeroMany(Predicate predicate, Args... args) requires(LexerViewPredicateV<Predicate, Args...>) {
+    if (!m_isOk) {
+      return *this;
+    }
+
+    while (std::invoke(predicate, args..., m_view)) {
     }
 
     return *this;
@@ -319,6 +387,23 @@ struct Matcher final {
     return *this;
   }
 
+  template <typename Predicate, typename... Args>
+  Matcher& AssertMany(Predicate predicate, Args... args) requires(LexerViewPredicateV<Predicate, Args...>) {
+    if (!m_isOk) {
+      return *this;
+    }
+
+    if (!std::invoke(predicate, args..., m_view)) {
+      m_isOk = false;
+      RestoreIfFailed();
+    }
+
+    while (std::invoke(predicate, args..., m_view)) {
+    }
+
+    return *this;
+  }
+
   // Why not MatcherPredicate???
   // What can we do with a matcher?
   // We can capture a matcher. I don't want to write matcher->getView every fucking time
@@ -329,6 +414,15 @@ struct Matcher final {
   template <LexerViewConsumer Consumer>
   Matcher& Perform(Consumer consumer) {
     if (m_isOk) {
+      consumer(m_view);
+    }
+
+    return *this;
+  }
+
+  template <LexerViewConsumer Consumer>
+  Matcher& PerformIfFailed(Consumer consumer) {
+    if (!m_isOk) {
       consumer(m_view);
     }
 

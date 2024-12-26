@@ -97,7 +97,7 @@ struct TokenNumber final : Token {
   }
 
   static TokenType GetType() {
-    return TokenType::IDENTIFIER;
+    return TokenType::NUMBER;
   }
 
   [[nodiscard]] int64_t GetValue() const {

@@ -150,9 +150,7 @@ struct LexerView final {
     return std::string(GetTokenView(length));
   }
 
-
   // Match
-
 
   template <typename... Chars>
   [[nodiscard]] bool Match(Chars... chars) const requires(... && std::same_as<Chars, char>) {
@@ -163,8 +161,6 @@ struct LexerView final {
     char c = Next();
     return ((chars == c) || ...);
   }
-
-  // TODO refactor 2 stringviewish
 
   template <StringViewIsh... StringViews>
   [[nodiscard]] bool Match(const StringViews&... views) const {
@@ -258,6 +254,27 @@ struct LexerView final {
 
       return false;
     }(views)) || ...);
+  }
+
+  // Extract. Non-advancing
+
+  template <CharPredicate... Predicates>
+  [[nodiscard]] std::string_view MatchExtractView(Predicates... predicates) const {
+    size_t offset = 0;
+    while (HasSymbols(offset + 1) && predicates(Next(offset))) {
+      ++offset;
+    }
+
+    if (offset == 0) {
+      return std::string_view {};
+    }
+
+    return m_string.substr(m_position, offset);
+  }
+
+  template <CharPredicate... Predicates>
+  [[nodiscard]] std::string_view MatchExtract(Predicates... predicates) const {
+    return std::string(MatchExtractView(predicates...));
   }
 
 private:
