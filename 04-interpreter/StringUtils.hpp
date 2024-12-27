@@ -15,7 +15,3 @@ inline bool EqualsIgnoreCase(std::string_view s1, std::string_view s2) {
 
   return c1 == s1.end();
 }
-
-inline bool MatchAny(char c, std::string_view str) {
-  return str.find(c) != std::string::npos;
-}

@@ -6,6 +6,7 @@
 
 #include "Lexer.hpp"
 #include "Matcher.hpp"
+#include "Parser.hpp"
 
 std::string GetInput() {
   std::stringstream ss;
@@ -105,6 +106,11 @@ int main() {
   std::cout << "Success UwU\n";
   const auto& tokens = lexer.GetTokens();
   PrintTokens(tokens);
+  std::cout.flush();
+
+  Parser parser(tokens);
+  auto program = parser.Parse();
+
   return 0;
 
   // LexerView view(input);

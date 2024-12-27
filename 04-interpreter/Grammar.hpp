@@ -6,44 +6,54 @@
 
 /*
 
-Interpreter's formal grammar:
+Formal grammar
 
-Statement = StatementTerm Statement*
-StatementTerm = Add | Sub | Mult | Print | VariableDeclaration | VariableDeletion | FunctionCall | FunctionDeclaration | Condition
+StatementChain = Skip* Statement StatementChain*
+Statement = StatementPrint | StatementVarDelete | StatementIdentifierBased | StatementCondition | StatementLoop
 
-Expression = OrExpr
-OrExpr = AndExpr Or AndExpr
-AndExpr = PrimaryExpr And PrimaryExpr
-PrimaryExpr = Value Comparison Value
+StatementLoop = "loop" Skip* Vaue Skip* "do" Skip+ StatementChain NL
+StatementCondition = "if" Skip* Expression Skip* "then" Skip+ StatementChain NL
 
-Condition = if Expression then Statement NewLine
+Expression = ExpressionOr
+ExpressionOr = ExpressionAnd (Skip* "or" Skip* ExpressionAnd)*
+ExpressionAnd = ExpressionPrimary (Skip* "and" Skip* ExpressionPrimary)*
+ExpressionPrimary = Value Skip* Comparison Skip* Value
 
-FunctionDeclaration = Identifier function Statement NewLine
-Loop = loop Value do Statement NewLine
+Comparison = NotEquals | Equals
+NotEquals = "!="
+Equals = "=="
 
-Add = Identifier add Value
-Sub = Identifier sub Value
-Mult = Identifier mult Value
-Print = print
+StatementIdentifierBased = Identifier (PartVarModify | PartFuncDecl | PartVarDecl | PartCall)
+PartVarModify = Skip+ ("add" | "sub" | "mult") Skip* Value
+PartFuncDecl = Skip+ "function" Skip+ StatementChain NL
+PartVarDecl = Skip* '=' Skip* Value
+PartCall = Skip* '(' Skip* ')'
 
-VariableDeclaration = Identifier = Value
-VariableDeletion = delete Identifier
-FunctionCall = Identifier()
+StatementPrint = "print"
+StatementVarDelete = "delete" Skip+ Identifier
 
-Value = Number | $Identifier
-Comparison = Equal | NotEqual
+Value = OpDereference Skip* Identifier
+Value = Number
 
-Or = or
-And = and
-Equal = '=='
-NotEqual = '!='
-Number = Digit+
 Identifier = IdentifierSymbol+
+Number = (Sign Skip*)? Digit+
 
+Skip = WS | NL | Comment
+*if (nestingLevel > 0) Skip = WS  | Comment
+
+Comment = "//" (~'\n')*
+NL = '\n'
+WS = ' ' | '\t'
+
+OpDereference = $
+Sign = + | -
 Digit = 0..9
 IdentifierSymbol = a..z | A..Z
 
- */
+Not influenced by spaces, BUT:
+- Don't match NL inside a block
+
+*/
 
 enum struct TokenType : uint32_t {
   NUMBER,
