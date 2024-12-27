@@ -4,6 +4,7 @@
 #include <string_view>
 #include <sstream>
 
+#include "Interpreter.hpp"
 #include "Lexer.hpp"
 #include "Matcher.hpp"
 #include "Parser.hpp"
@@ -103,13 +104,27 @@ int main() {
     return 1;
   }
 
-  std::cout << "Success UwU\n";
+  std::cout << "Success UwU\n\n";
   const auto& tokens = lexer.GetTokens();
   PrintTokens(tokens);
   std::cout.flush();
+  std::cout << '\n';
 
   Parser parser(tokens);
   auto program = parser.Parse();
+  if (!program) {
+    std::cout << "Fail! FAIL!!1 YOU ARE A FAILURE !!1!!1!\n";
+    return 2;
+  }
+
+  Interpreter interpreter;
+  try {
+    interpreter.Evaluate(program.get());
+  } catch (ExecutionException& e) {
+    std::cout << e.what() << '\n';
+    std::cout << "Fail! FAIL!!1 YOU ARE A FAILURE !!1!!1!\n";
+    return 3;
+  }
 
   return 0;
 

@@ -1,129 +1,270 @@
 #pragma once
 
 #include <bitset>
+#include <iostream>
 #include <unordered_map>
 #include <unordered_set>
-
 #include "AstNodes.hpp"
-#include "DynamicBitset.hpp"
-#include "TruthTable.hpp"
 
-// Interpretation:
-//
-// Analyze expression, create parameter vector/map, sort parameters by name
-// After that we can evaluate an expression or generate a truth table
-// We can create a separate class for generation which will get parameters and evaluate for each
-//
-// How will we iterate over values? Create a vector of bools of size 0 - N. After each iteration perform manual binary increment. When we reached max value - end
-// using size_t will give maximum 64 parameters. Enough? I don't think so >:O (Their evaluation will take forewer anyway)
+/*
+
+Nodes:
+
+AstNodeStatementLoop: (AstNode Value, AstNode StatementChain)
+AstNodeStatementCondition: (AstNode condition, AstNode StatementChain)
+
+EvaluateValue() -> number
+EvaluateExpression() -> bool
+EvaluateStatement() -> Interpreter modification
+
+
+// And remember, function and variable identifiers can be the same
+
+*/
+
+struct ExecutionException final : std::exception {
+  explicit ExecutionException(const char* message)
+  : std::exception(message) {
+  }
+};
+
+struct Variable final {
+  std::string name;
+  int64_t value;
+};
 
 struct Interpreter final {
-  void SetExpression(std::shared_ptr<AstNode> root) {
-    m_root = std::move(root);
-    // Get names
-    std::unordered_set<std::string> names;
-    CollectParameterNames(m_root.get(), names);
-    // Sort names
-    m_parameterNames = std::vector<std::string>(names.begin(), names.end());
-    std::ranges::sort(m_parameterNames);
-    // Create mapping
-    m_nameIndexTable.clear();
-    for (size_t i = 0; i < m_parameterNames.size(); ++i) {
-      m_nameIndexTable.emplace(m_parameterNames.at(i), i);
-    }
+  void Reset() {
+    m_shouldTerminate = false;
   }
 
-  TruthTable GenerateTruthTable() {
-    assert(m_root);
-
-    TruthTable table(m_parameterNames);
-    std::vector<bool> values(m_parameterNames.size());
-
-    while (true) {
-      bool result = EvaluateNode(m_root.get(), values);
-      table.EmplaceRecord(std::make_unique<TruthTableRecord>(values, result));
-
-      if (VectorBitset::AllSet(values)) {
-        return table;
-      }
-
-      VectorBitset::Increment(values);
-
-      // if (m_bitset.AllSet()) {
-      //   return table;
-      // }
-      //
-      // ++m_bitset;
+  void Evaluate(const AstNode* root) noexcept(false) {
+    if (m_shouldTerminate) {
+      return;
     }
-  }
 
-  bool Evaluate(const std::vector<bool>& parameters) {
-    assert(parameters.size() == m_parameterNames.size());
-    return EvaluateNode(m_root.get(), parameters);
+    EvaluateStatement(root);
   }
 
 private:
-  void CollectParameterNames(const AstNode* node, std::unordered_set<std::string>& names) {
-    if (node->GetType() == AstNodeType::PARAMETER) {
-      names.emplace(dynamic_cast<const AstNodeParameter*>(node)->GetName());
+  int64_t EvaluateValue(const AstNode* node) {
+    if (node->GetType() == AstNodeType::VALUE_NUMBER) {
+      return node->As<AstNodeValueNumber>()->GetValue();
+    }
+
+    if (node->GetType() == AstNodeType::VALUE_IDENTIFIER) {
+      const auto& varName = node->As<AstNodeValueIdentifier>()->GetName();
+      if (!m_variables.contains(varName)) {
+        throw ExecutionException("Undefined variable.");
+      }
+
+      return m_variables.at(varName)->value;
+    }
+
+    throw ExecutionException("Unexpected node type.");
+  }
+
+  bool EvaluateExpression(const AstNode* node) {
+    if (node->GetType() != AstNodeType::BINARY_OPERATOR) {
+      throw ExecutionException("Unexpected node type.");
+    }
+
+    const auto* opNode = node->As<AstNodeBinaryOperator>();
+    if (opNode->GetOperatorType() == BinaryOperatorType::EQUALS) {
+      return EvaluateValue(opNode->GetLeft().get()) == EvaluateValue(opNode->GetRight().get());
+    }
+
+    if (opNode->GetOperatorType() == BinaryOperatorType::NOT_EQUALS) {
+      return EvaluateValue(opNode->GetLeft().get()) != EvaluateValue(opNode->GetRight().get());
+    }
+
+    if (opNode->GetOperatorType() == BinaryOperatorType::OR) {
+      return EvaluateExpression(opNode->GetLeft().get()) || EvaluateExpression(opNode->GetRight().get());
+    }
+
+    if (opNode->GetOperatorType() == BinaryOperatorType::AND) {
+      return EvaluateExpression(opNode->GetLeft().get()) && EvaluateExpression(opNode->GetRight().get());
+    }
+
+    throw ExecutionException("Unexpected node type.");
+  }
+
+  void EvaluateStatementChain(const AstNodeStatementChain* node) {
+    if (m_shouldTerminate) {
       return;
     }
 
-    if (node->GetType() == AstNodeType::UNARY_OPERATOR_NOT) {
-      CollectParameterNames(dynamic_cast<const AstNodeUnaryOperatorNot*>(node)->GetChild().get(), names);
-      return;
-    }
-
-    if (node->GetType() == AstNodeType::BINARY_OPERATOR) {
-      auto opNode = dynamic_cast<const AstNodeBinaryOperator*>(node);
-      CollectParameterNames(opNode->GetLeft().get(), names);
-      CollectParameterNames(opNode->GetRight().get(), names);
-      return;
+    const auto& statements = node->GetStatements();
+    for (auto iter = statements.begin(), end = statements.end(); !m_shouldTerminate && iter != end; ++iter) {
+      EvaluateStatement(iter->get());
     }
   }
 
-  bool EvaluateNode(const AstNode* node, const std::vector<bool>& parameters) {
-    if (node->GetType() == AstNodeType::BOOL) {
-      return node->As<AstNodeBool>()->GetValue();
+  void EvaluateStatementPrint(const AstNodeStatementPrint* node) {
+    if (m_shouldTerminate) {
+      return;
     }
 
-    if (node->GetType() == AstNodeType::PARAMETER) {
-      return parameters.at(m_nameIndexTable.at(node->As<AstNodeParameter>()->GetName()));
+    m_shouldTerminate = true;
+    for (const auto& variable : m_values) {
+      std::cout << variable.name << " = " << variable.value << '\n';
+    }
+  }
+
+  void EvaluateStatementDelete(const AstNodeStatementDelete* node) {
+    if (m_shouldTerminate) {
+      return;
     }
 
-    if (node->GetType() == AstNodeType::UNARY_OPERATOR_NOT) {
-      return !EvaluateNode(node->As<AstNodeUnaryOperatorNot>()->GetChild().get(), parameters);
+    const auto& name = node->GetVariableName();
+    if (!m_variables.contains(name)) {
+      throw ExecutionException("Undefined variable.");
     }
 
-    if (node->GetType() == AstNodeType::BINARY_OPERATOR) {
-      auto opNode = node->As<AstNodeBinaryOperator>();
-      bool leftResult = EvaluateNode(opNode->GetLeft().get(), parameters);
-      bool rightResult = EvaluateNode(opNode->GetRight().get(), parameters);
+    m_values.erase(m_variables.at(name));
+    m_variables.erase(name);
+  }
 
-      switch (opNode->GetOperatorType()) {
-        case BinaryOperatorType::AND: {
-          return leftResult && rightResult;
-        }
-        case BinaryOperatorType::XOR: {
-          return leftResult ^ rightResult;
-        }
-        case BinaryOperatorType::OR: {
-          return leftResult || rightResult;
-        }
-        default: {
-          // WTF
-          return false;
-        }
+  void EvaluateStatementCall(const AstNodeStatementCall* node) {
+    if (m_shouldTerminate) {
+      return;
+    }
+
+    const auto& name = node->GetFunctionName();
+    if (!m_functions.contains(name)) {
+      throw ExecutionException("Undefined function.");
+    }
+
+    EvaluateStatement(m_functions.at(name).get());
+  }
+
+  void EvaluateStatementVariableModification(const AstNodeBinaryStatementVarModification* node) {
+    if (m_shouldTerminate) {
+      return;
+    }
+
+    const auto& varName = node->GetVariableName();
+    if (node->GetOperatorType() == ModificationOperatorType::ASSIGN) {
+      // Reassignment
+      if (m_variables.contains(varName)) {
+        m_variables.at(varName)->value = EvaluateValue(node->GetValue().get());
+        return;
       }
+
+      // Declaration
+      m_variables.emplace(varName, m_values.emplace(m_values.end(), varName, EvaluateValue(node->GetValue().get())));
+      return;
     }
 
-    // WTF
-    return false;
+    if (!m_variables.contains(varName)) {
+      throw ExecutionException("Undefined variable.");
+    }
+
+    switch (node->GetOperatorType()) {
+      case ModificationOperatorType::ADD: {
+        m_variables.at(varName)->value += EvaluateValue(node->GetValue().get());
+        return;
+      }
+      case ModificationOperatorType::SUBTRACT: {
+        m_variables.at(varName)->value -= EvaluateValue(node->GetValue().get());
+        return;
+      }
+      case ModificationOperatorType::MULTIPLY: {
+        m_variables.at(varName)->value *= EvaluateValue(node->GetValue().get());
+        return;
+      }
+      default: throw ExecutionException("Unexpected node.");
+    }
+  }
+
+  void EvaluateStatementFunctionDeclaration(const AstNodeStatementFunctionDeclaration* node) {
+    if (m_shouldTerminate) {
+      return;
+    }
+
+    const auto& name = node->GetFunctionName();
+    if (m_functions.contains(name)) {
+      throw ExecutionException("Function is already defined.");
+    }
+
+    m_functions.emplace(name, node->GetCode());
+  }
+
+  void EvaluateStatementCondition(const AstNodeStatementCondition* node) {
+    if (m_shouldTerminate) {
+      return;
+    }
+
+    if (EvaluateExpression(node->GetCondition().get())) {
+      EvaluateStatement(node->GetCode().get());
+    }
+  }
+
+  void EvaluateStatementLoop(const AstNodeStatementLoop* node) {
+    if (m_shouldTerminate) {
+      return;
+    }
+
+    // Evaluate a wolf
+    int64_t iterator = EvaluateValue(node->GetInitValue().get());
+    while (iterator > 0) {
+      EvaluateStatement(node->GetCode().get());
+      --iterator;
+    }
+  }
+
+  void EvaluateStatement(const AstNode* node) {
+    if (m_shouldTerminate) {
+      return;
+    }
+
+    if (node->GetType() == AstNodeType::STATEMENT_CHAIN) {
+      EvaluateStatementChain(node->As<AstNodeStatementChain>());
+      return;
+    }
+
+    if (node->GetType() == AstNodeType::STATEMENT_PRINT) {
+      EvaluateStatementPrint(node->As<AstNodeStatementPrint>());
+      return;
+    }
+
+    if (node->GetType() == AstNodeType::STATEMENT_DELETE) {
+      EvaluateStatementDelete(node->As<AstNodeStatementDelete>());
+      return;
+    }
+
+    if (node->GetType() == AstNodeType::STATEMENT_CALL) {
+      EvaluateStatementCall(node->As<AstNodeStatementCall>());
+      return;
+    }
+
+    if (node->GetType() == AstNodeType::STATEMENT_VAR_MODIFICATION) {
+      EvaluateStatementVariableModification(node->As<AstNodeBinaryStatementVarModification>());
+      return;
+    }
+
+    if (node->GetType() == AstNodeType::STATEMENT_FUNC_DECL) {
+      EvaluateStatementFunctionDeclaration(node->As<AstNodeStatementFunctionDeclaration>());
+      return;
+    }
+
+    if (node->GetType() == AstNodeType::STATEMENT_CONDITION) {
+      EvaluateStatementCondition(node->As<AstNodeStatementCondition>());
+      return;
+    }
+
+    if (node->GetType() == AstNodeType::STATEMENT_LOOP) {
+      EvaluateStatementLoop(node->As<AstNodeStatementLoop>());
+      return;
+    }
+
+    throw ExecutionException("Unexpected node.");
   }
 
 private:
-  std::shared_ptr<AstNode> m_root;
-  std::vector<std::string> m_parameterNames;
-  std::unordered_map<std::string, size_t> m_nameIndexTable;
-  // DynamicBitset m_bitset;
+  bool m_shouldTerminate = false;
+  // Print should print variables in order
+  std::list<Variable> m_values;
+  std::unordered_map<std::string, std::list<Variable>::iterator> m_variables;
+  std::unordered_map<std::string, std::shared_ptr<AstNode>> m_functions;
 };

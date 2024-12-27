@@ -15,4 +15,5 @@ add_executable(Parsing
   AstNodes.hpp
   ParserView.hpp
   Parser.hpp
+  Interpreter.hpp
 )
