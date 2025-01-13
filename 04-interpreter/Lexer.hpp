@@ -143,7 +143,11 @@ private:
       try {
         auto view = recorder.GetTokenView();
         int64_t number = std::stoll(std::string(view));
-        // TODO possible overflow
+        // Overflow
+        if (!isPositive && number == std::numeric_limits<int64_t>::min()) {
+          return false;
+        }
+
         number = isPositive ? number : -number;
         PushToken<TokenNumber>(number);
         return true;
